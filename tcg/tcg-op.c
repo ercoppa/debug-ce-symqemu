@@ -3294,7 +3294,7 @@ void tcg_gen_qemu_ld_i32(TCGv_i32 val, TCGv addr, TCGArg idx, TCGMemOp memop)
 #if SYMQEMU_FIX_LOAD_SEXT
     mop = tcg_const_i64(memop);
 #else
-    load_size = tcg_const_i64(memop);
+    load_size = tcg_const_i64(1 << (memop & MO_SIZE));
 #endif
     mmu_idx = tcg_const_i64(idx);
 
@@ -3417,7 +3417,7 @@ void tcg_gen_qemu_ld_i64(TCGv_i64 val, TCGv addr, TCGArg idx, TCGMemOp memop)
 #if SYMQEMU_FIX_LOAD_SEXT
     mop = tcg_const_i64(memop);
 #else
-    load_size = tcg_const_i64(memop);
+    load_size = tcg_const_i64(1 << (memop & MO_SIZE));
 #endif
     gen_helper_sym_load_guest_i64(tcgv_i64_expr(val), cpu_env,
                                   addr, tcgv_i64_expr(addr),

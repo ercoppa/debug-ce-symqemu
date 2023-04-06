@@ -48,7 +48,7 @@ static inline void gen_tb_start(TranslationBlock *tb)
 #if SYMQEMU_FIX_PC
     TCGv_i64 block = tcg_const_i64((uint64_t)tb->pc);
 #else
-    TCGv_i64 block = tcg_const_i64((uint64_t)tb->pc);
+    TCGv_i64 block = tcg_const_i64((uint64_t)tb);
 #endif
     gen_helper_sym_notify_block(block);
     tcg_temp_free_i64(block);
