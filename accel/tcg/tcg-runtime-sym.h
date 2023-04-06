@@ -129,3 +129,5 @@ DEF_HELPER_FLAGS_0(sym_collect_garbage, TCG_CALL_NO_RWG, void)
 /* The extrl and extrh instructions aren't emitted on 64-bit hosts. If we ever
  * extend support to other host architectures, we need to implement them. The
  * same applies to brcond2_i32 and setcond2_i32. */
+
+DEF_HELPER_FLAGS_2(sym_check_consistency, TCG_CALL_NO_RWG, void, ptr, i64)

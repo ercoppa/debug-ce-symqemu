@@ -84,6 +84,10 @@ static inline void glue(gen_helper_, name)(dh_retvar_decl(ret)          \
 #include "tcg-runtime.h"
 #include "tcg-runtime-sym.h"
 
+#if CONFIG_SYM_HELPERS
+#include "../../../symhelpers/gen_sym_helpers.h"
+#endif
+
 #undef DEF_HELPER_FLAGS_0
 #undef DEF_HELPER_FLAGS_1
 #undef DEF_HELPER_FLAGS_2

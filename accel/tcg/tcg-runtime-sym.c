@@ -21,6 +21,14 @@
 #include "qemu/qemu-print.h"
 #include "tcg.h"
 
+#include "../../../../config.h"
+#if DEBUG_CONSISTENCY_CHECK
+extern int check_expr; 
+#define CHECK_CONSISTENCY(...) {if (check_expr) _sym_check_consistency(__VA_ARGS__); }
+#else
+#define CHECK_CONSISTENCY(...) {}
+#endif
+
 /* Include the symbolic backend, using void* as expression type. */
 
 #define SymExpr void*
@@ -41,6 +49,9 @@
     if (arg1_expr == NULL && arg2_expr == NULL) {                              \
         return NULL;                                                           \
     }                                                                          \
+                                                                               \
+    CHECK_CONSISTENCY(arg1_expr, arg1, 0);                                     \
+    CHECK_CONSISTENCY(arg2_expr, arg2, 0);                                     \
                                                                                \
     if (arg1_expr == NULL) {                                                   \
         arg1_expr = _sym_build_integer(arg1, _sym_bits_helper(arg2_expr));     \
@@ -300,36 +311,62 @@ void *HELPER(sym_bswap)(void *expr, uint64_t length)
 static void *sym_load_guest_internal(CPUArchState *env,
                                      target_ulong addr, void *addr_expr,
                                      uint64_t load_length, uint8_t result_length,
-                                     target_ulong mmu_idx)
+                                     target_ulong mmu_idx, 
+#if SYMQEMU_FIX_LOAD_SEXT
+                                     uint8_t sign
+#endif
+                                     )
 {
     /* Try an alternative address */
-    if (addr_expr != NULL)
+    if (addr_expr != NULL) {
+        CHECK_CONSISTENCY(addr_expr, addr, get_pc(env));
         _sym_push_path_constraint(
             _sym_build_equal(
                 addr_expr, _sym_build_integer(addr, sizeof(addr) * 8)),
             true, get_pc(env));
+    }
 
     void *host_addr = tlb_vaddr_to_host(env, addr, MMU_DATA_LOAD, mmu_idx);
     void *memory_expr = _sym_read_memory((uint8_t*)host_addr, load_length, true);
 
     if (load_length == result_length || memory_expr == NULL)
         return memory_expr;
+#if SYMQEMU_FIX_LOAD_SEXT
+    else if (sign)
+        return _sym_build_sext(memory_expr, (result_length - load_length) * 8);
+#endif
     else
         return _sym_build_zext(memory_expr, (result_length - load_length) * 8);
 }
 
 void *HELPER(sym_load_guest_i32)(CPUArchState *env,
                                  target_ulong addr, void *addr_expr,
-                                 uint64_t length, target_ulong mmu_idx)
+                                 uint64_t memop, target_ulong mmu_idx)
 {
-    return sym_load_guest_internal(env, addr, addr_expr, length, 4, mmu_idx);
+#if SYMQEMU_FIX_LOAD_SEXT
+    uint64_t length = 1 << (memop & MO_SIZE);
+    uint64_t sign = memop & MO_SIGN;
+#endif
+    return sym_load_guest_internal(env, addr, addr_expr, length, 4, mmu_idx, 
+#if SYMQEMU_FIX_LOAD_SEXT
+        sign
+#endif
+    );
 }
 
 void *HELPER(sym_load_guest_i64)(CPUArchState *env,
                                  target_ulong addr, void *addr_expr,
-                                 uint64_t length, target_ulong mmu_idx)
+                                 uint64_t memop, target_ulong mmu_idx)
 {
-    return sym_load_guest_internal(env, addr, addr_expr, length, 8, mmu_idx);
+#if SYMQEMU_FIX_LOAD_SEXT
+    uint64_t length = 1 << (memop & MO_SIZE);
+    uint64_t sign = memop & MO_SIGN;
+#endif
+    return sym_load_guest_internal(env, addr, addr_expr, length, 8, mmu_idx, 
+#if SYMQEMU_FIX_LOAD_SEXT
+        sign
+#endif
+    );
 }
 
 static void sym_store_guest_internal(CPUArchState *env,
@@ -338,14 +375,44 @@ static void sym_store_guest_internal(CPUArchState *env,
                                      uint64_t length, target_ulong mmu_idx)
 {
     /* Try an alternative address */
-    if (addr_expr != NULL)
+    if (addr_expr != NULL) {
+        CHECK_CONSISTENCY(addr_expr, addr, get_pc(env));
         _sym_push_path_constraint(
             _sym_build_equal(
                 addr_expr, _sym_build_integer(addr, sizeof(addr) * 8)),
             true, get_pc(env));
+    }
 
     void *host_addr = tlb_vaddr_to_host(env, addr, MMU_DATA_STORE, mmu_idx);
     _sym_write_memory((uint8_t*)host_addr, length, value_expr, true);
+
+#if DEBUG_CONSISTENCY_CHECK
+    if (value_expr && length <= 8) {
+        uint64_t expected_value = 0;
+        switch (length) {
+            case 1:
+                expected_value = *((uint8_t*)addr);
+                break;
+            case 2:
+                expected_value = *((uint16_t*)addr);
+                break;
+            case 4:
+                expected_value = *((uint32_t*)addr);
+                break;
+            case 8:
+                expected_value = *((uint64_t*)addr);
+                break;
+            default:
+                printf("READ SIZE: %ld\n", length);
+                assert(0 && "Unexpected read size");
+        }
+        SymExpr* ve = value_expr;
+        if (_sym_bits_helper(ve) > length * 8) {
+            ve = _sym_extract_helper(ve, 8 * length - 1, 0);
+        }
+        CHECK_CONSISTENCY(ve, expected_value, get_pc(env));
+    }
+#endif
 }
 
 void HELPER(sym_store_guest_i32)(CPUArchState *env,
@@ -461,6 +528,9 @@ void *HELPER(sym_extract2_i32)(uint32_t ah, void *ah_expr,
 
     if (al_expr == NULL)
         al_expr = _sym_build_integer(al, 32);
+
+    CHECK_CONSISTENCY(ah_expr, ah, 0);
+    CHECK_CONSISTENCY(al_expr, al, 0);
 
     /* The implementation follows the alternative implementation of
      * tcg_gen_extract2_i32 in tcg-op.c (which handles architectures that don't
@@ -616,8 +686,12 @@ static void *sym_setcond_internal(CPUArchState *env,
     _sym_push_path_constraint(condition, result, get_pc(env));
 
     assert(result_bits > 1);
+#if SYMCC_FIX_ISSUE_108
     return _sym_build_zext(_sym_build_bool_to_bit(condition),
                            result_bits - 1);
+#else
+    return _sym_build_bool_to_bits(condition, result_bits);
+#endif
 }
 
 void *HELPER(sym_setcond_i32)(CPUArchState *env,
@@ -656,4 +730,9 @@ void HELPER(sym_notify_block)(uint64_t block_id)
 void HELPER(sym_collect_garbage)(void)
 {
     _sym_collect_garbage();
+}
+
+void HELPER(sym_check_consistency)(void *expr, uint64_t value)
+{
+    _sym_check_consistency(expr, value, 0);
 }

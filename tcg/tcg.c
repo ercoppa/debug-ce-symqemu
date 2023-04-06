@@ -22,6 +22,8 @@
  * THE SOFTWARE.
  */
 
+#include "../../config.h"
+
 /* define it to use liveness analysis (better code) */
 #define USE_TCG_OPTIMIZATIONS
 
@@ -1732,7 +1734,13 @@ void tcg_gen_callN(void *func, TCGTemp *ret, int nargs, TCGTemp **args)
     TCGHelperInfo *info;
     TCGOp *op;
 
-    if (ret != NULL && ret->symbolic_expression == 0) {
+    if (ret != NULL && ret->symbolic_expression == 0
+#if SYMQEMU_FIX_MULUH
+        // helper_sym_muluh_i64 will take care of the return
+        // symbolic value of helper_muluh_i64
+        && func != helper_muluh_i64
+#endif
+        ) {
         /* This is an unhandled helper; we concretize, i.e., the expression for
          * the result is NULL */
         tcg_gen_op2i_i64(INDEX_op_movi_i64, temp_tcgv_i64(temp_expr(ret)), 0);

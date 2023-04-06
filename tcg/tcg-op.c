@@ -31,6 +31,8 @@
 #include "trace-tcg.h"
 #include "trace/mem.h"
 
+#include "../../config.h"
+
 /* Reduce the number of ifdefs below.  This assumes that all uses of
    TCGV_HIGH and TCGV_LOW are properly protected by a conditional that
    the compiler can eliminate.  */
@@ -237,6 +239,9 @@ void tcg_gen_subfi_i32(TCGv_i32 ret, int32_t arg1, TCGv_i32 arg2)
         /* Don't recurse with tcg_gen_neg_i32.  */
         gen_helper_sym_neg(tcgv_i32_expr(ret), tcgv_i32_expr(arg2));
         tcg_gen_op2_i32(INDEX_op_neg_i32, ret, arg2);
+#if DEBUG_CONSISTENCY_CHECK
+        gen_helper_sym_check_consistency((TCGv_ptr) tcgv_i32_expr(ret), (TCGv_i64) ret);
+#endif
     } else {
         TCGv_i32 t0 = tcg_const_i32(arg1);
         tcg_gen_sub_i32(ret, t0, arg2);
@@ -387,14 +392,42 @@ void tcg_gen_setcond_i32(TCGCond cond, TCGv_i32 ret,
     } else if (cond == TCG_COND_NEVER) {
         tcg_gen_movi_i32(ret, 0);
     } else {
+#if SYMQEMU_FIX_SETCOND
+        // NOTE: arg{1, 2} may be the same as ret
+        //       since we look at arg{1, 2} after
+        //       the concrete operation then
+        //       we may need to preserve these args
+        TCGv_i32 copy_arg1 = arg1;
+        TCGv_i32 copy_arg2 = arg2;
+        if (ret == arg1) {
+            copy_arg1 = tcg_temp_new_i32();
+            tcg_gen_mov_i32(copy_arg1, arg1);
+        }
+        if (ret == arg1) {
+            copy_arg2 = tcg_temp_new_i32();
+            tcg_gen_mov_i32(copy_arg2, arg2);
+        }
+#endif
+
         tcg_gen_op4i_i32(INDEX_op_setcond_i32, ret, arg1, arg2, cond);
         TCGv_i32 cond_temp = tcg_const_i32(cond);
         gen_helper_sym_setcond_i32(
             tcgv_i32_expr(ret), cpu_env,
+#if SYMQEMU_FIX_SETCOND
+            copy_arg1, tcgv_i32_expr(arg1),
+            copy_arg2, tcgv_i32_expr(arg2),
+#else
             arg1, tcgv_i32_expr(arg1),
             arg2, tcgv_i32_expr(arg2),
+#endif
             cond_temp, ret);
         tcg_temp_free_i32(cond_temp);
+#if SYMQEMU_FIX_SETCOND
+        if (ret == arg1)
+            tcg_temp_free_i32(copy_arg1);
+        if (ret == arg2)
+            tcg_temp_free_i32(copy_arg2);
+#endif
     }
 }
 
@@ -562,6 +595,9 @@ void tcg_gen_orc_i32(TCGv_i32 ret, TCGv_i32 arg1, TCGv_i32 arg2)
 void tcg_gen_clz_i32(TCGv_i32 ret, TCGv_i32 arg1, TCGv_i32 arg2)
 {
     if (TCG_TARGET_HAS_clz_i32) {
+#if SYMQEMU_FIX_CTZ_CLZ
+        tcg_gen_op2i_i64(INDEX_op_movi_i64, tcgv_i32_expr_num(ret), 0);
+#endif
         tcg_gen_op3_i32(INDEX_op_clz_i32, ret, arg1, arg2);
     } else if (TCG_TARGET_HAS_clz_i64) {
         TCGv_i64 t1 = tcg_temp_new_i64();
@@ -589,6 +625,9 @@ void tcg_gen_clzi_i32(TCGv_i32 ret, TCGv_i32 arg1, uint32_t arg2)
 void tcg_gen_ctz_i32(TCGv_i32 ret, TCGv_i32 arg1, TCGv_i32 arg2)
 {
     if (TCG_TARGET_HAS_ctz_i32) {
+#if SYMQEMU_FIX_CTZ_CLZ
+        tcg_gen_op2i_i64(INDEX_op_movi_i64, tcgv_i32_expr_num(ret), 0);
+#endif
         tcg_gen_op3_i32(INDEX_op_ctz_i32, ret, arg1, arg2);
     } else if (TCG_TARGET_HAS_ctz_i64) {
         TCGv_i64 t1 = tcg_temp_new_i64();
@@ -1508,6 +1547,9 @@ void tcg_gen_subfi_i64(TCGv_i64 ret, int64_t arg1, TCGv_i64 arg2)
         /* Don't recurse with tcg_gen_neg_i64.  */
         gen_helper_sym_neg(tcgv_i64_expr(ret), tcgv_i64_expr(arg2));
         tcg_gen_op2_i64(INDEX_op_neg_i64, ret, arg2);
+#if DEBUG_CONSISTENCY_CHECK
+        gen_helper_sym_check_consistency((TCGv_ptr) tcgv_i64_expr(ret), (TCGv_i64) ret);
+#endif
     } else {
         TCGv_i64 t0 = tcg_const_i64(arg1);
         tcg_gen_sub_i64(ret, t0, arg2);
@@ -1743,6 +1785,22 @@ void tcg_gen_setcond_i64(TCGCond cond, TCGv_i64 ret,
     } else if (cond == TCG_COND_NEVER) {
         tcg_gen_movi_i64(ret, 0);
     } else {
+#if SYMQEMU_FIX_SETCOND
+        // NOTE: arg{1, 2} may be the same as ret
+        //       since we look at arg{1, 2} after
+        //       the concrete operation then
+        //       we may need to preserve these args
+        TCGv_i64 copy_arg1 = arg1;
+        TCGv_i64 copy_arg2 = arg2;
+        if (ret == arg1) {
+            copy_arg1 = tcg_temp_new_i64();
+            tcg_gen_mov_i64(copy_arg1, arg1);
+        }
+        if (ret == arg1) {
+            copy_arg2 = tcg_temp_new_i64();
+            tcg_gen_mov_i64(copy_arg2, arg2);
+        }
+#endif
         if (TCG_TARGET_REG_BITS == 32) {
             tcg_gen_op6i_i32(INDEX_op_setcond2_i32, TCGV_LOW(ret),
                              TCGV_LOW(arg1), TCGV_HIGH(arg1),
@@ -1755,10 +1813,21 @@ void tcg_gen_setcond_i64(TCGCond cond, TCGv_i64 ret,
         TCGv_i32 cond_temp = tcg_const_i32(cond);
         gen_helper_sym_setcond_i64(
             tcgv_i64_expr(ret), cpu_env,
+#if SYMQEMU_FIX_SETCOND
+            copy_arg1, tcgv_i64_expr(arg1),
+            copy_arg2, tcgv_i64_expr(arg2),
+#else
             arg1, tcgv_i64_expr(arg1),
             arg2, tcgv_i64_expr(arg2),
+#endif
             cond_temp, ret);
         tcg_temp_free_i32(cond_temp);
+#if SYMQEMU_FIX_SETCOND
+        if (ret == arg1)
+            tcg_temp_free_i64(copy_arg1);
+        if (ret == arg2)
+            tcg_temp_free_i64(copy_arg2);
+#endif
     }
 }
 
@@ -2160,6 +2229,9 @@ void tcg_gen_orc_i64(TCGv_i64 ret, TCGv_i64 arg1, TCGv_i64 arg2)
 void tcg_gen_clz_i64(TCGv_i64 ret, TCGv_i64 arg1, TCGv_i64 arg2)
 {
     if (TCG_TARGET_HAS_clz_i64) {
+#if SYMQEMU_FIX_CTZ_CLZ
+        tcg_gen_op2i_i64(INDEX_op_movi_i64, tcgv_i64_expr_num(ret), 0);
+#endif
         tcg_gen_op3_i64(INDEX_op_clz_i64, ret, arg1, arg2);
     } else {
         gen_helper_clz_i64(ret, arg1, arg2);
@@ -2187,6 +2259,9 @@ void tcg_gen_clzi_i64(TCGv_i64 ret, TCGv_i64 arg1, uint64_t arg2)
 void tcg_gen_ctz_i64(TCGv_i64 ret, TCGv_i64 arg1, TCGv_i64 arg2)
 {
     if (TCG_TARGET_HAS_ctz_i64) {
+#if SYMQEMU_FIX_CTZ_CLZ
+        tcg_gen_op2i_i64(INDEX_op_movi_i64, tcgv_i64_expr_num(ret), 0);
+#endif
         tcg_gen_op3_i64(INDEX_op_ctz_i64, ret, arg1, arg2);
     } else if (TCG_TARGET_HAS_ctpop_i64 || TCG_TARGET_HAS_clz_i64) {
         TCGv_i64 z, t = tcg_temp_new_i64();
@@ -2255,6 +2330,9 @@ void tcg_gen_clrsb_i64(TCGv_i64 ret, TCGv_i64 arg)
 void tcg_gen_ctpop_i64(TCGv_i64 ret, TCGv_i64 arg1)
 {
     if (TCG_TARGET_HAS_ctpop_i64) {
+#if SYMQEMU_FIX_CTZ_CLZ
+        tcg_gen_op2i_i64(INDEX_op_movi_i64, tcgv_i64_expr_num(ret), 0);
+#endif
         tcg_gen_op2_i64(INDEX_op_ctpop_i64, ret, arg1);
     } else if (TCG_TARGET_REG_BITS == 32 && TCG_TARGET_HAS_ctpop_i32) {
         tcg_gen_ctpop_i32(TCGV_HIGH(ret), TCGV_HIGH(arg1));
@@ -3182,7 +3260,11 @@ static void tcg_gen_req_mo(TCGBar type)
 void tcg_gen_qemu_ld_i32(TCGv_i32 val, TCGv addr, TCGArg idx, TCGMemOp memop)
 {
     TCGMemOp orig_memop;
+#if SYMQEMU_FIX_LOAD_SEXT
+    TCGv_i64 mop, mmu_idx, addr_loc;
+#else
     TCGv_i64 load_size, mmu_idx, addr_loc;
+#endif
 
     /* Temporary bugfix
      * On some architectures, the addr and val(ret) params are, for some reasons, 
@@ -3209,13 +3291,26 @@ void tcg_gen_qemu_ld_i32(TCGv_i32 val, TCGv addr, TCGArg idx, TCGMemOp memop)
 
     /* Perform the symbolic memory access. Doing so _after_ the concrete
      * operation ensures that the target address is in the TLB. */
-    load_size = tcg_const_i64(1 << (memop & MO_SIZE));
+#if SYMQEMU_FIX_LOAD_SEXT
+    mop = tcg_const_i64(memop);
+#else
+    load_size = tcg_const_i64(memop);
+#endif
     mmu_idx = tcg_const_i64(idx);
 
     gen_helper_sym_load_guest_i32(tcgv_i32_expr(val), cpu_env,
                                   addr_loc, tcgv_i64_expr(addr_loc),
-                                  load_size, mmu_idx);
+#if SYMQEMU_FIX_LOAD_SEXT
+                                  mop, 
+#else
+                                  load_size
+#endif
+                                  mmu_idx);
+#if SYMQEMU_FIX_LOAD_SEXT
+    tcg_temp_free_i64(mop);
+#else
     tcg_temp_free_i64(load_size);
+#endif
     tcg_temp_free_i64(mmu_idx);
     tcg_temp_free_i64(addr_loc);
 
@@ -3284,7 +3379,11 @@ void tcg_gen_qemu_st_i32(TCGv_i32 val, TCGv addr, TCGArg idx, TCGMemOp memop)
 void tcg_gen_qemu_ld_i64(TCGv_i64 val, TCGv addr, TCGArg idx, TCGMemOp memop)
 {
     TCGMemOp orig_memop;
+#if SYMQEMU_FIX_LOAD_SEXT
+    TCGv_i64 mop, mmu_idx;
+#else
     TCGv_i64 load_size, mmu_idx;
+#endif
 
     if (TCG_TARGET_REG_BITS == 32 && (memop & MO_SIZE) < MO_64) {
         tcg_gen_qemu_ld_i32(TCGV_LOW(val), addr, idx, memop);
@@ -3315,11 +3414,24 @@ void tcg_gen_qemu_ld_i64(TCGv_i64 val, TCGv addr, TCGArg idx, TCGMemOp memop)
     /* Perform the symbolic memory access. Doing so _after_ the concrete
      * operation ensures that the target address is in the TLB. */
     mmu_idx = tcg_const_i64(idx);
-    load_size = tcg_const_i64(1 << (memop & MO_SIZE));
+#if SYMQEMU_FIX_LOAD_SEXT
+    mop = tcg_const_i64(memop);
+#else
+    load_size = tcg_const_i64(memop);
+#endif
     gen_helper_sym_load_guest_i64(tcgv_i64_expr(val), cpu_env,
                                   addr, tcgv_i64_expr(addr),
-                                  load_size, mmu_idx);
+#if SYMQEMU_FIX_LOAD_SEXT
+                                  mop, 
+#else
+                                  load_size
+#endif 
+                                  mmu_idx);
+#if SYMQEMU_FIX_LOAD_SEXT
+    tcg_temp_free_i64(mop);
+#else
     tcg_temp_free_i64(load_size);
+#endif
     tcg_temp_free_i64(mmu_idx);
 
     if ((orig_memop ^ memop) & MO_BSWAP) {

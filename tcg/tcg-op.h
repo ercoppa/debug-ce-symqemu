@@ -29,6 +29,8 @@
 #include "exec/helper-proto.h"
 #include "exec/helper-gen.h"
 
+#include "../../config.h"
+
 /* Slightly questionable macros to save typing and for (arguably) clearer code:
  * SYM_HELPER_BINARY_32(add) generates a helper call to "sym_add_i32", expecting
  * TCGv_i32 variables ret, arg1 and arg2 to exist in the environment.
@@ -473,6 +475,9 @@ static inline void tcg_gen_neg_i32(TCGv_i32 ret, TCGv_i32 arg)
     if (TCG_TARGET_HAS_neg_i32) {
         gen_helper_sym_neg(tcgv_i32_expr(ret), tcgv_i32_expr(arg));
         tcg_gen_op2_i32(INDEX_op_neg_i32, ret, arg);
+#if DEBUG_CONSISTENCY_CHECK
+        gen_helper_sym_check_consistency((TCGv_ptr) tcgv_i32_expr(ret), (TCGv_i64) ret);
+#endif
     } else {
         tcg_gen_subfi_i32(ret, 0, arg);
     }
@@ -757,6 +762,9 @@ static inline void tcg_gen_neg_i64(TCGv_i64 ret, TCGv_i64 arg)
     if (TCG_TARGET_HAS_neg_i64) {
         gen_helper_sym_neg(tcgv_i64_expr(ret), tcgv_i64_expr(arg));
         tcg_gen_op2_i64(INDEX_op_neg_i64, ret, arg);
+#if DEBUG_CONSISTENCY_CHECK
+        gen_helper_sym_check_consistency((TCGv_ptr) tcgv_i64_expr(ret), (TCGv_i64) ret);
+#endif
     } else {
         tcg_gen_subfi_i64(ret, 0, arg);
     }
