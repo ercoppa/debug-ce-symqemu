@@ -311,9 +311,9 @@ void *HELPER(sym_bswap)(void *expr, uint64_t length)
 static void *sym_load_guest_internal(CPUArchState *env,
                                      target_ulong addr, void *addr_expr,
                                      uint64_t load_length, uint8_t result_length,
-                                     target_ulong mmu_idx, 
+                                     target_ulong mmu_idx 
 #if SYMQEMU_FIX_LOAD_SEXT
-                                     uint8_t sign
+                                     , uint8_t sign
 #endif
                                      )
 {
@@ -341,30 +341,40 @@ static void *sym_load_guest_internal(CPUArchState *env,
 
 void *HELPER(sym_load_guest_i32)(CPUArchState *env,
                                  target_ulong addr, void *addr_expr,
-                                 uint64_t memop, target_ulong mmu_idx)
+#if SYMQEMU_FIX_LOAD_SEXT
+                                 uint64_t memop, 
+#else
+                                 uint64_t length,
+#endif
+                                 target_ulong mmu_idx)
 {
 #if SYMQEMU_FIX_LOAD_SEXT
     uint64_t length = 1 << (memop & MO_SIZE);
     uint64_t sign = memop & MO_SIGN;
 #endif
-    return sym_load_guest_internal(env, addr, addr_expr, length, 4, mmu_idx, 
+    return sym_load_guest_internal(env, addr, addr_expr, length, 4, mmu_idx 
 #if SYMQEMU_FIX_LOAD_SEXT
-        sign
+        , sign
 #endif
     );
 }
 
 void *HELPER(sym_load_guest_i64)(CPUArchState *env,
                                  target_ulong addr, void *addr_expr,
-                                 uint64_t memop, target_ulong mmu_idx)
+#if SYMQEMU_FIX_LOAD_SEXT
+                                 uint64_t memop, 
+#else
+                                 uint64_t length,
+#endif
+                                 target_ulong mmu_idx)
 {
 #if SYMQEMU_FIX_LOAD_SEXT
     uint64_t length = 1 << (memop & MO_SIZE);
     uint64_t sign = memop & MO_SIGN;
 #endif
-    return sym_load_guest_internal(env, addr, addr_expr, length, 8, mmu_idx, 
+    return sym_load_guest_internal(env, addr, addr_expr, length, 8, mmu_idx 
 #if SYMQEMU_FIX_LOAD_SEXT
-        sign
+        , sign
 #endif
     );
 }

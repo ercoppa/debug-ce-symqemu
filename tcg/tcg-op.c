@@ -3303,7 +3303,7 @@ void tcg_gen_qemu_ld_i32(TCGv_i32 val, TCGv addr, TCGArg idx, TCGMemOp memop)
 #if SYMQEMU_FIX_LOAD_SEXT
                                   mop, 
 #else
-                                  load_size
+                                  load_size,
 #endif
                                   mmu_idx);
 #if SYMQEMU_FIX_LOAD_SEXT
@@ -3424,7 +3424,7 @@ void tcg_gen_qemu_ld_i64(TCGv_i64 val, TCGv addr, TCGArg idx, TCGMemOp memop)
 #if SYMQEMU_FIX_LOAD_SEXT
                                   mop, 
 #else
-                                  load_size
+                                  load_size,
 #endif 
                                   mmu_idx);
 #if SYMQEMU_FIX_LOAD_SEXT
